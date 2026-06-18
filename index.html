@@ -44,6 +44,7 @@ const BOUNDARIES = [
 // ---- state ----
 let map, pendingLatLng = null, photo1 = null, photo2 = null;
 let markersOnMap = {};
+let storyDataById = {};
 
 window.addEventListener("DOMContentLoaded", () => {
   initMap();
@@ -77,6 +78,7 @@ function listenForStories() {
       if (change.type === "removed" && markersOnMap[change.doc.id]) {
         map.removeLayer(markersOnMap[change.doc.id]);
         delete markersOnMap[change.doc.id];
+        delete storyDataById[change.doc.id];
       }
     });
     updateCounter(Object.keys(markersOnMap).length);
@@ -89,6 +91,8 @@ function addMarker(id, story) {
   const marker = L.marker([story.lat, story.lng], { icon: buildIcon(story) }).addTo(map);
   marker.on("click", e => { L.DomEvent.stopPropagation(e); openStoryView(story); });
   markersOnMap[id] = marker;
+  storyDataById[id] = story;
+  applyFilters();
 }
 
 function buildIcon(story) {
@@ -98,14 +102,25 @@ function buildIcon(story) {
   });
   const dotColor = colors[0] || "#1D9E75";
   const short = (story.title || "Untitled").substring(0, 24);
+
+  // Fixed-width wrapper so the anchor math is always correct, regardless of
+  // title length or zoom level. The dot is centered horizontally in a
+  // known-width box, and the anchor point is exactly the dot's center.
+  const wrapperWidth = 160;
+  const dotSize = 8;
+  const stemHeight = 7;
+  const labelHeight = 22;     // approx rendered height of the label pill
+  const totalHeight = labelHeight + stemHeight + dotSize;
+
   return L.divIcon({
     className: "",
-    html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;">
-      <div style="background:${dotColor};color:#fff;font-family:-apple-system,sans-serif;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.25);max-width:160px;overflow:hidden;text-overflow:ellipsis;">${short}</div>
-      <div style="width:2px;height:7px;background:${dotColor};"></div>
-      <div style="width:8px;height:8px;border-radius:50%;background:${dotColor};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.25);"></div>
+    html: `<div style="width:${wrapperWidth}px;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+      <div style="background:${dotColor};color:#fff;font-family:-apple-system,sans-serif;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.25);max-width:${wrapperWidth}px;overflow:hidden;text-overflow:ellipsis;">${short}</div>
+      <div style="width:2px;height:${stemHeight}px;background:${dotColor};"></div>
+      <div style="width:${dotSize}px;height:${dotSize}px;border-radius:50%;background:${dotColor};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.25);"></div>
     </div>`,
-    iconAnchor: [80, 28]
+    iconSize: [wrapperWidth, totalHeight],
+    iconAnchor: [wrapperWidth / 2, totalHeight - (dotSize / 2)]
   });
 }
 
@@ -252,6 +267,13 @@ function buildBoundaryFilters() {
     btn.onclick = () => toggleFilter(btn, b.id, b.color);
     container.appendChild(btn);
   });
+
+  const clearBtn = document.createElement("button");
+  clearBtn.className = "clear-filters-btn";
+  clearBtn.id = "clear-filters-btn";
+  clearBtn.textContent = "Clear filters";
+  clearBtn.onclick = clearAllFilters;
+  container.appendChild(clearBtn);
 }
 
 let activeFilters = new Set();
@@ -265,16 +287,39 @@ function toggleFilter(btn, id, color) {
     btn.style.background = color;
     btn.style.color = "#fff";
   }
+  document.getElementById("clear-filters-btn").classList.toggle("visible", activeFilters.size > 0);
+  applyFilters();
+}
+
+function clearAllFilters() {
+  activeFilters.clear();
+  document.querySelectorAll(".filter-btn").forEach(btn => {
+    const found = BOUNDARIES.find(b => b.id === btn.dataset.id);
+    btn.style.background = "transparent";
+    btn.style.color = found ? found.color : "#1D9E75";
+  });
+  document.getElementById("clear-filters-btn").classList.remove("visible");
   applyFilters();
 }
 
 function applyFilters() {
-  if (activeFilters.size === 0) {
-    Object.values(markersOnMap).forEach(m => map.addLayer ? m.addTo(map) : null);
-    return;
-  }
-  // Show markers only if they match at least one active filter
-  // We need story data per marker -- store it
+  Object.keys(markersOnMap).forEach(id => {
+    const marker = markersOnMap[id];
+    const story = storyDataById[id];
+    const storyBoundaries = (story && story.boundaries) || [];
+
+    let shouldShow = true;
+    if (activeFilters.size > 0) {
+      shouldShow = storyBoundaries.some(b => activeFilters.has(b));
+    }
+
+    const isOnMap = map.hasLayer(marker);
+    if (shouldShow && !isOnMap) {
+      marker.addTo(map);
+    } else if (!shouldShow && isOnMap) {
+      map.removeLayer(marker);
+    }
+  });
 }
 
 function updateCounter(n) {
@@ -311,16 +356,33 @@ header h1 { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
 #filter-bar {
   position: absolute;
   top: 12px;
-  left: 12px;
+  left: 60px;
+  right: 12px;
   z-index: 800;
   background: rgba(255,255,255,0.96);
   border-radius: 10px;
   padding: 8px 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.15);
-  max-width: calc(100% - 360px);
 }
 #filter-bar p { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #8aaa98; margin-bottom: 6px; }
-#filter-row { display: flex; flex-wrap: wrap; gap: 5px; }
+#filter-row { display: flex; flex-wrap: nowrap; gap: 5px; overflow-x: auto; padding-bottom: 2px; }
+#filter-row::-webkit-scrollbar { height: 4px; }
+#filter-row::-webkit-scrollbar-thumb { background: #d4e4dc; border-radius: 2px; }
+.filter-btn { flex-shrink: 0; }
+.clear-filters-btn {
+  flex-shrink: 0;
+  border: none;
+  background: #f0f4f2;
+  color: #5a7a6a;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  display: none;
+}
+.clear-filters-btn.visible { display: inline-block; }
 
 /* hint */
 #hint {
