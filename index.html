@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Environmental Solutions Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- ============================================================
+     FIREBASE SETUP — replace the values below with your own
+     Get them from: Firebase Console > Your Project > Project Settings > Web App
+     ============================================================ -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey:            "AIzaSyDPp5og3IQyFYv8yPGrlY3TrP-O85nXdgE",
+  authDomain:        "solutions-map-dc2b6.firebaseapp.com",
+  projectId:         "solutions-map-dc2b6",
+  storageBucket:     "solutions-map-dc2b6.firebasestorage.app",
+  messagingSenderId: "268012323583",
+  appId:             "1:268012323583:web:03ef311fa82539ec4682ca"
+};
+
+const app  = initializeApp(firebaseConfig);
+const db   = getFirestore(app);
+const col  = collection(db, "stories");
+
+const BOUNDARIES = [
+  { id:"climate",       label:"Climate change",        color:"#E8724A" },
+  { id:"biodiversity",  label:"Biodiversity",          color:"#4A9E6B" },
+  { id:"land",          label:"Land system change",    color:"#C8A240" },
+  { id:"freshwater",    label:"Freshwater",            color:"#4A7EC8" },
+  { id:"biogeochem",    label:"Biogeochemical flows",  color:"#8B6BB5" },
+  { id:"ocean",         label:"Ocean acidification",   color:"#3AABBF" },
+  { id:"atmosphere",    label:"Atmospheric aerosols",  color:"#7A8FA0" },
+  { id:"ozone",         label:"Stratospheric ozone",   color:"#5F9E8F" },
+  { id:"novel",         label:"Novel entities",        color:"#C25FA0" },
+];
+
+// ---- state ----
+let map, pendingLatLng = null, photo1 = null, photo2 = null;
+let markersOnMap = {};
+
+window.addEventListener("DOMContentLoaded", () => {
+  initMap();
+  listenForStories();
+  buildBoundaryChecks();
+  buildBoundaryFilters();
+});
+
+// ---- MAP INIT ----
+function initMap() {
+  map = L.map("map").setView([20, 10], 2);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors", maxZoom: 18
+  }).addTo(map);
+
+  map.on("click", e => {
+    pendingLatLng = e.latlng;
+    openForm();
+  });
+
+  setTimeout(() => document.getElementById("hint").style.opacity = "0", 5000);
+}
+
+// ---- REALTIME LISTENER ----
+function listenForStories() {
+  onSnapshot(col, snap => {
+    snap.docChanges().forEach(change => {
+      if (change.type === "added") {
+        addMarker(change.doc.id, change.doc.data());
+      }
+      if (change.type === "removed" && markersOnMap[change.doc.id]) {
+        map.removeLayer(markersOnMap[change.doc.id]);
+        delete markersOnMap[change.doc.id];
+      }
+    });
+    updateCounter(Object.keys(markersOnMap).length);
+  });
+}
+
+// ---- ADD MARKER ----
+function addMarker(id, story) {
+  if (!story.lat || !story.lng) return;
+  const marker = L.marker([story.lat, story.lng], { icon: buildIcon(story) }).addTo(map);
+  marker.on("click", e => { L.DomEvent.stopPropagation(e); openStoryView(story); });
+  markersOnMap[id] = marker;
+}
+
+function buildIcon(story) {
+  const colors = (story.boundaries || []).map(b => {
+    const found = BOUNDARIES.find(x => x.id === b);
+    return found ? found.color : "#1D9E75";
+  });
+  const dotColor = colors[0] || "#1D9E75";
+  const short = (story.title || "Untitled").substring(0, 24);
+  return L.divIcon({
+    className: "",
+    html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+      <div style="background:${dotColor};color:#fff;font-family:-apple-system,sans-serif;font-size:11px;font-weight:700;padding:4px 10px;border-radius:99px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.25);max-width:160px;overflow:hidden;text-overflow:ellipsis;">${short}</div>
+      <div style="width:2px;height:7px;background:${dotColor};"></div>
+      <div style="width:8px;height:8px;border-radius:50%;background:${dotColor};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.25);"></div>
+    </div>`,
+    iconAnchor: [80, 28]
+  });
+}
+
+// ---- SIDEBAR ----
+function openForm() {
+  document.getElementById("form-view").classList.remove("hidden");
+  document.getElementById("story-view").classList.add("hidden");
+  document.getElementById("sidebar").classList.add("open");
+  document.getElementById("f-title").value = "";
+  document.getElementById("f-desc").value = "";
+  document.getElementById("word-count").textContent = "0 / 100 words";
+  document.getElementById("word-count").style.color = "#8aaa98";
+  photo1 = null; photo2 = null;
+  resetSlot("slot1","1"); resetSlot("slot2","2");
+  document.querySelectorAll(".pb-check").forEach(c => c.checked = false);
+  document.getElementById("f-title").focus();
+}
+
+function openStoryView(story) {
+  document.getElementById("form-view").classList.add("hidden");
+  document.getElementById("story-view").classList.remove("hidden");
+  document.getElementById("sidebar").classList.add("open");
+
+  const bTags = (story.boundaries || []).map(b => {
+    const found = BOUNDARIES.find(x => x.id === b);
+    return found ? `<span style="display:inline-block;font-size:11px;padding:3px 10px;border-radius:99px;background:${found.color}22;color:${found.color};font-weight:600;margin:2px 3px 2px 0;border:1px solid ${found.color}44;">${found.label}</span>` : "";
+  }).join("");
+
+  let photos = "";
+  if (story.photo1 || story.photo2) {
+    photos = `<div style="display:flex;gap:8px;margin-top:14px;">`;
+    if (story.photo1) photos += `<img src="${story.photo1}" style="flex:1;height:100px;object-fit:cover;border-radius:8px;border:1px solid #d4e4dc;" alt="Photo 1"/>`;
+    if (story.photo2) photos += `<img src="${story.photo2}" style="flex:1;height:100px;object-fit:cover;border-radius:8px;border:1px solid #d4e4dc;" alt="Photo 2"/>`;
+    photos += `</div>`;
+  }
+
+  document.getElementById("story-content").innerHTML = `
+    <p style="font-size:17px;font-weight:700;color:#1a2e25;margin-bottom:3px;">${story.title || "Untitled"}</p>
+    <p style="font-size:11px;color:#8aaa98;margin-bottom:10px;">${(story.lat||0).toFixed(3)}&#176;, ${(story.lng||0).toFixed(3)}&#176;</p>
+    ${bTags ? `<div style="margin-bottom:12px;">${bTags}</div>` : ""}
+    <hr style="border:none;border-top:1px solid #e8f0eb;margin:10px 0;" />
+    <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#8aaa98;margin-bottom:5px;">Solution</p>
+    <p style="font-size:13px;line-height:1.65;color:#2a4a38;">${story.description || ""}</p>
+    ${photos}
+  `;
+}
+
+function closeSidebar() {
+  document.getElementById("sidebar").classList.remove("open");
+  pendingLatLng = null;
+}
+
+// ---- WORD COUNT ----
+function countWords(str) {
+  return str.trim() === "" ? 0 : str.trim().split(/\s+/).length;
+}
+
+window.onWordInput = function() {
+  const val = document.getElementById("f-desc").value;
+  const wc = countWords(val);
+  const el = document.getElementById("word-count");
+  el.textContent = `${wc} / 100 words`;
+  el.style.color = wc > 100 ? "#E24B4A" : "#8aaa98";
+};
+
+// ---- PHOTOS ----
+function readFile(file, cb) {
+  const r = new FileReader();
+  r.onload = e => cb(e.target.result);
+  r.readAsDataURL(file);
+}
+
+window.previewPhoto = function(input, slotId, num) {
+  const file = input.files[0];
+  if (!file) return;
+  readFile(file, data => {
+    if (num === 1) photo1 = data; else photo2 = data;
+    const slot = document.getElementById(slotId);
+    slot.innerHTML = `<img src="${data}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" alt="preview"/>
+      <input type="file" accept="image/*" onchange="previewPhoto(this,'${slotId}',${num})" style="display:none;" />`;
+  });
+};
+
+function resetSlot(slotId, num) {
+  document.getElementById(slotId).innerHTML = `
+    <span style="font-size:22px;color:#8aaa98;">&#128247;</span>
+    <span style="font-size:11px;color:#8aaa98;margin-top:3px;">Photo ${num}</span>
+    <input type="file" accept="image/*" onchange="previewPhoto(this,'${slotId}',${num})" style="display:none;" />`;
+}
+
+// ---- SUBMIT ----
+window.submitStory = async function() {
+  const title = document.getElementById("f-title").value.trim();
+  const desc  = document.getElementById("f-desc").value.trim();
+  if (!title)         { alert("Please add a title."); return; }
+  if (!desc)          { alert("Please describe the solution."); return; }
+  if (countWords(desc) > 100) { alert("Please keep the description to 100 words or fewer."); return; }
+  if (!pendingLatLng) { alert("No location selected. Please click the map first."); return; }
+
+  const boundaries = [...document.querySelectorAll(".pb-check:checked")].map(c => c.value);
+
+  const btn = document.getElementById("submit-btn");
+  btn.disabled = true; btn.textContent = "Saving...";
+
+  try {
+    await addDoc(col, {
+      title, description: desc, boundaries,
+      photo1: photo1 || null, photo2: photo2 || null,
+      lat: pendingLatLng.lat, lng: pendingLatLng.lng,
+      created: serverTimestamp()
+    });
+    pendingLatLng = null;
+    closeSidebar();
+  } catch(e) {
+    alert("Error saving: " + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Save story to map";
+  }
+};
+
+// ---- BUILD BOUNDARY CHECKBOXES (form) ----
+function buildBoundaryChecks() {
+  const container = document.getElementById("pb-checks");
+  BOUNDARIES.forEach(b => {
+    const label = document.createElement("label");
+    label.style.cssText = "display:flex;align-items:center;gap:7px;font-size:12px;color:#2a4a38;cursor:pointer;padding:4px 0;";
+    label.innerHTML = `
+      <input type="checkbox" class="pb-check" value="${b.id}" style="accent-color:${b.color};width:14px;height:14px;cursor:pointer;" />
+      <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${b.color};flex-shrink:0;"></span>
+      ${b.label}`;
+    container.appendChild(label);
+  });
+}
+
+// ---- BUILD BOUNDARY FILTERS (map overlay) ----
+function buildBoundaryFilters() {
+  const container = document.getElementById("filter-row");
+  BOUNDARIES.forEach(b => {
+    const btn = document.createElement("button");
+    btn.className = "filter-btn";
+    btn.dataset.id = b.id;
+    btn.style.cssText = `border:1.5px solid ${b.color};color:${b.color};background:transparent;font-size:11px;padding:3px 10px;border-radius:99px;cursor:pointer;font-family:inherit;white-space:nowrap;transition:all .15s;`;
+    btn.textContent = b.label;
+    btn.onclick = () => toggleFilter(btn, b.id, b.color);
+    container.appendChild(btn);
+  });
+}
+
+let activeFilters = new Set();
+function toggleFilter(btn, id, color) {
+  if (activeFilters.has(id)) {
+    activeFilters.delete(id);
+    btn.style.background = "transparent";
+    btn.style.color = color;
+  } else {
+    activeFilters.add(id);
+    btn.style.background = color;
+    btn.style.color = "#fff";
+  }
+  applyFilters();
+}
+
+function applyFilters() {
+  if (activeFilters.size === 0) {
+    Object.values(markersOnMap).forEach(m => map.addLayer ? m.addTo(map) : null);
+    return;
+  }
+  // Show markers only if they match at least one active filter
+  // We need story data per marker -- store it
+}
+
+function updateCounter(n) {
+  document.getElementById("counter").textContent = n === 1 ? "1 story" : `${n} stories`;
+}
+
+// expose globals
+window.closeSidebar = closeSidebar;
+window.openForm = openForm;
+</script>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; background: #0c1f16; }
+
+header {
+  background: #0c1f16;
+  color: #fff;
+  padding: 11px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #1a3a28;
+}
+header h1 { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+.counter-badge { background: rgba(255,255,255,0.12); border-radius: 99px; padding: 3px 12px; font-size: 12px; font-weight: 500; }
+.header-hint { margin-left: auto; font-size: 12px; opacity: .6; }
+
+#main { display: flex; flex: 1; overflow: hidden; position: relative; }
+#map { flex: 1; }
+
+/* filter bar */
+#filter-bar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 800;
+  background: rgba(255,255,255,0.96);
+  border-radius: 10px;
+  padding: 8px 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+  max-width: calc(100% - 360px);
+}
+#filter-bar p { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #8aaa98; margin-bottom: 6px; }
+#filter-row { display: flex; flex-wrap: wrap; gap: 5px; }
+
+/* hint */
+#hint {
+  position: absolute;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(12,31,22,.88);
+  color: #fff;
+  font-size: 12px;
+  padding: 8px 20px;
+  border-radius: 99px;
+  z-index: 900;
+  pointer-events: none;
+  white-space: nowrap;
+  transition: opacity 1s;
+}
+
+/* sidebar */
+#sidebar {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: #fff;
+  border-left: 1px solid #d4e4dc;
+  transition: width .3s ease;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 1000;
+}
+#sidebar.open { width: 340px; min-width: 340px; }
+#sidebar-inner { width: 340px; overflow-y: auto; flex: 1; padding: 20px; }
+
+.sb-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.sb-header h2 { font-size: 15px; font-weight: 700; color: #1a2e25; }
+.close-btn { background: #f0f4f2; border: none; cursor: pointer; color: #5a7a6a; font-size: 16px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+.close-btn:hover { background: #d4e4dc; }
+
+.field-label { font-size: 11px; font-weight: 700; color: #4a6a5a; margin-bottom: 5px; display: block; text-transform: uppercase; letter-spacing: .04em; }
+.field-group { margin-bottom: 14px; }
+
+input[type="text"], textarea {
+  width: 100%; font-family: inherit; font-size: 13px; color: #1a2e25;
+  background: #f7faf8; border: 1px solid #c5dcd0; border-radius: 8px;
+  padding: 8px 11px; outline: none; resize: vertical; transition: border-color .15s;
+}
+input[type="text"]:focus, textarea:focus { border-color: #1D9E75; background: #fff; }
+textarea { min-height: 90px; line-height: 1.55; }
+
+.word-count { font-size: 11px; color: #8aaa98; text-align: right; margin-top: 3px; }
+
+.pb-section { background: #f7faf8; border: 1px solid #e0ede6; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; max-height: 200px; overflow-y: auto; }
+
+.photo-row { display: flex; gap: 10px; margin-bottom: 14px; }
+.photo-slot { flex: 1; height: 90px; border: 1.5px dashed #c5dcd0; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; overflow: hidden; position: relative; background: #f7faf8; }
+.photo-slot:hover { border-color: #1D9E75; }
+.photo-slot input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.submit-btn { width: 100%; background: #1D9E75; color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; transition: background .15s; }
+.submit-btn:hover { background: #0F6E56; }
+.submit-btn:disabled { background: #c5dcd0; cursor: not-allowed; }
+
+.cancel-link { display: block; text-align: center; margin-top: 8px; font-size: 12px; color: #8aaa98; cursor: pointer; text-decoration: underline; }
+
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ADE80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg>
+  <h1>Environmental Solutions Map</h1>
+  <span class="counter-badge" id="counter">0 stories</span>
+  <p class="header-hint">Click anywhere on the map to share a solution</p>
+</header>
+
+<div id="main">
+  <div id="map"></div>
+
+  <div id="filter-bar">
+    <p>Filter by planetary boundary</p>
+    <div id="filter-row"></div>
+  </div>
+
+  <div id="hint">Click the map to pin an environmental solution</div>
+
+  <div id="sidebar">
+    <div id="sidebar-inner">
+
+      <!-- FORM -->
+      <div id="form-view">
+        <div class="sb-header">
+          <h2>Add a solution</h2>
+          <button class="close-btn" onclick="closeSidebar()">&#10005;</button>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Title</label>
+          <input type="text" id="f-title" placeholder="e.g. Rhine River restoration, Germany" maxlength="80" />
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Solution description <span style="font-weight:400;text-transform:none;">(max 100 words)</span></label>
+          <textarea id="f-desc" placeholder="Describe the environmental problem and how it was solved..." oninput="onWordInput()"></textarea>
+          <p class="word-count" id="word-count">0 / 100 words</p>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">Planetary boundaries addressed</label>
+          <div class="pb-section" id="pb-checks"></div>
+        </div>
+
+        <label class="field-label">Photos (optional)</label>
+        <div class="photo-row">
+          <label class="photo-slot" id="slot1">
+            <span style="font-size:22px;color:#8aaa98;">&#128247;</span>
+            <span style="font-size:11px;color:#8aaa98;margin-top:3px;">Photo 1</span>
+            <input type="file" accept="image/*" onchange="previewPhoto(this,'slot1',1)" />
+          </label>
+          <label class="photo-slot" id="slot2">
+            <span style="font-size:22px;color:#8aaa98;">&#128247;</span>
+            <span style="font-size:11px;color:#8aaa98;margin-top:3px;">Photo 2</span>
+            <input type="file" accept="image/*" onchange="previewPhoto(this,'slot2',2)" />
+          </label>
+        </div>
+
+        <button class="submit-btn" id="submit-btn" onclick="submitStory()">Save story to map</button>
+        <span class="cancel-link" onclick="closeSidebar()">Cancel</span>
+      </div>
+
+      <!-- STORY VIEW -->
+      <div id="story-view" class="hidden">
+        <div class="sb-header">
+          <h2>Solution story</h2>
+          <button class="close-btn" onclick="closeSidebar()">&#10005;</button>
+        </div>
+        <div id="story-content"></div>
+        <button class="submit-btn" style="margin-top:20px;" onclick="closeSidebar()">Back to map</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
