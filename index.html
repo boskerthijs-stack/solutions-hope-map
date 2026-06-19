@@ -212,6 +212,20 @@ function resetSlot(slotId, num) {
 }
 
 // ---- SUBMIT ----
+// ---- REVERSE GEOCODE: turn lat/lng into a country name ----
+// Uses BigDataCloud's free reverse-geocoding endpoint (no API key needed).
+// If the lookup fails for any reason (offline, rate limit, etc.) we just
+// save the story without a country rather than blocking the submission.
+async function lookupCountry(lat, lng) {
+  try {
+    const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`);
+    const data = await res.json();
+    return data.countryName || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 window.submitStory = async function() {
   const title = document.getElementById("f-title").value.trim();
   const desc  = document.getElementById("f-desc").value.trim();
@@ -226,10 +240,12 @@ window.submitStory = async function() {
   btn.disabled = true; btn.textContent = "Saving...";
 
   try {
+    const country = await lookupCountry(pendingLatLng.lat, pendingLatLng.lng);
     await addDoc(col, {
       title, description: desc, boundaries,
       photo1: photo1 || null, photo2: photo2 || null,
       lat: pendingLatLng.lat, lng: pendingLatLng.lng,
+      country: country || null,
       created: serverTimestamp()
     });
     pendingLatLng = null;
