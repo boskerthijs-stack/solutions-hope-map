@@ -187,10 +187,42 @@ window.onWordInput = function() {
 };
 
 // ---- PHOTOS ----
+// Resize + compress the image in the browser BEFORE storing it.
+// Firestore allows max 1MB per document, and phone photos are far
+// bigger than that, so we shrink to max 1200px on the longest side and
+// re-encode as JPEG. This keeps uploads well under the limit and means
+// students never have to compress anything by hand.
 function readFile(file, cb) {
-  const r = new FileReader();
-  r.onload = e => cb(e.target.result);
-  r.readAsDataURL(file);
+  const MAX_DIMENSION = 1200;   // longest side, in pixels
+  const QUALITY = 0.8;          // JPEG quality, 0–1
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > height && width > MAX_DIMENSION) {
+        height = Math.round(height * (MAX_DIMENSION / width));
+        width = MAX_DIMENSION;
+      } else if (height > MAX_DIMENSION) {
+        width = Math.round(width * (MAX_DIMENSION / height));
+        height = MAX_DIMENSION;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      // toDataURL gives us a compressed JPEG as a base64 string
+      cb(canvas.toDataURL("image/jpeg", QUALITY));
+    };
+    img.onerror = () => {
+      // If it's not an image the browser can decode, fall back to raw data
+      cb(e.target.result);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
 }
 
 window.previewPhoto = function(input, slotId, num) {
@@ -235,6 +267,16 @@ window.submitStory = async function() {
   if (!pendingLatLng) { alert("No location selected. Please click the map first."); return; }
 
   const boundaries = [...document.querySelectorAll(".pb-check:checked")].map(c => c.value);
+
+  // Safety check: Firestore allows max ~1MB per document. The photos are
+  // already shrunk on selection, but two large ones together could still
+  // be too big, so we check the combined size and warn clearly instead
+  // of letting the save fail with a cryptic error.
+  const totalPhotoChars = (photo1 ? photo1.length : 0) + (photo2 ? photo2.length : 0);
+  if (totalPhotoChars > 1400000) {
+    alert("The photos are a bit too large to save together. Try using just one photo, or a smaller image.");
+    return;
+  }
 
   const btn = document.getElementById("submit-btn");
   btn.disabled = true; btn.textContent = "Saving...";
