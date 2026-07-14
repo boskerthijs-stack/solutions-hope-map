@@ -54,6 +54,12 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 // ---- MAP INIT ----
+// ---- WELCOME POP-UP ----
+function closeWelcome() {
+  document.getElementById("welcome-modal").classList.add("hidden");
+}
+window.closeWelcome = closeWelcome;
+
 function initMap() {
   map = L.map("map", {
     minZoom: 2,            // never zoom out past one full world
@@ -426,6 +432,40 @@ header h1 { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
 .header-hint { margin-left: auto; font-size: 12px; opacity: .6; }
 
 #main { display: flex; flex: 1; overflow: hidden; position: relative; }
+/* ---- WELCOME POP-UP ---- */
+#welcome-modal {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(11,30,22,0.65);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+#welcome-modal.hidden { display: none; }
+#welcome-card {
+  background: #fff; border-radius: 18px; max-width: 420px; width: 100%;
+  padding: 32px; text-align: center;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.3);
+}
+#welcome-icon {
+  width: 58px; height: 58px; border-radius: 50%; background: #E7F5EF;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 18px;
+}
+#welcome-card h2 { font-size: 21px; font-weight: 700; color: #1a2e25; margin-bottom: 18px; }
+#welcome-card ul { list-style: none; text-align: left; margin-bottom: 26px; }
+#welcome-card li {
+  font-size: 14px; line-height: 1.55; color: #46685a;
+  padding: 10px 0 10px 26px; position: relative;
+}
+#welcome-card li::before {
+  content: "→"; position: absolute; left: 0; color: #1D9E75; font-weight: 700;
+}
+#welcome-card strong { color: #1a2e25; font-weight: 700; }
+#welcome-card button {
+  background: #1D9E75; color: #fff; border: none; cursor: pointer;
+  padding: 13px 30px; border-radius: 99px;
+  font-size: 14px; font-weight: 700; font-family: inherit; width: 100%;
+}
+#welcome-card button:hover { background: #178A65; }
+
 #map { flex: 1; }
 /* Show a location-pin cursor over the map (like Google Maps) instead of
    the default Leaflet grab/hand cursor, to invite clicking to drop a pin. */
@@ -518,6 +558,28 @@ textarea { min-height: 90px; line-height: 1.55; }
 
 .word-count { font-size: 11px; color: #8aaa98; text-align: right; margin-top: 3px; }
 
+/* ---- FORM GUIDANCE ---- */
+.form-guide {
+  background: #E7F5EF; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px;
+}
+.form-guide-title {
+  font-size: 12px; font-weight: 700; color: #1a2e25;
+  text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px;
+}
+.form-guide ul { list-style: none; }
+.form-guide li {
+  font-size: 12.5px; line-height: 1.5; color: #46685a;
+  padding: 3px 0 3px 14px; position: relative;
+}
+.form-guide li::before {
+  content: "•"; position: absolute; left: 0; color: #1D9E75; font-weight: 700;
+}
+.form-guide strong { color: #1a2e25; font-weight: 700; }
+
+.field-hint {
+  font-size: 11.5px; line-height: 1.45; color: #8aaa98; margin-top: 5px;
+}
+
 .pb-section { background: #f7faf8; border: 1px solid #e0ede6; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; max-height: 200px; overflow-y: auto; }
 
 .photo-row { display: flex; gap: 10px; margin-bottom: 14px; }
@@ -535,6 +597,27 @@ textarea { min-height: 90px; line-height: 1.55; }
 </style>
 </head>
 <body>
+
+<!-- ===================================================================
+     WELCOME POP-UP — shows once when the map opens. Click the button
+     or anywhere outside the card to dismiss it.
+     EDIT the text below to change the instructions.
+     =================================================================== -->
+<div id="welcome-modal" onclick="if(event.target===this) closeWelcome()">
+  <div id="welcome-card">
+    <div id="welcome-icon">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 21c-4-4-7-7.5-7-11a7 7 0 0114 0c0 3.5-3 7-7 11z"/><circle cx="12" cy="10" r="2.5"/>
+      </svg>
+    </div>
+    <h2>Welcome to the map</h2>
+    <ul>
+      <li><strong>Click on a pin</strong> to read the story behind it.</li>
+      <li><strong>Zoom in and click on the map</strong> to add your own.</li>
+    </ul>
+    <button onclick="closeWelcome()">Got it, let's go</button>
+  </div>
+</div>
 
 <div id="main">
   <div id="map"></div>
@@ -556,19 +639,35 @@ textarea { min-height: 90px; line-height: 1.55; }
           <button class="close-btn" onclick="closeSidebar()">&#10005;</button>
         </div>
 
+        <!-- ===============================================================
+             GUIDANCE BOX — tells students what makes a good story.
+             EDIT the three points below.
+             =============================================================== -->
+        <div class="form-guide">
+          <p class="form-guide-title">What makes a good story?</p>
+          <ul>
+            <li>A <strong>real place</strong> where something actually improved.</li>
+            <li>What the <strong>problem</strong> was, what was <strong>done</strong>, and what <strong>changed</strong>.</li>
+            <li>Tag every planetary boundary it genuinely addressed.</li>
+          </ul>
+        </div>
+
         <div class="field-group">
           <label class="field-label">Title</label>
           <input type="text" id="f-title" placeholder="e.g. Rhine River restoration, Germany" maxlength="80" />
+          <p class="field-hint">Name the place and the solution in a few words.</p>
         </div>
 
         <div class="field-group">
           <label class="field-label">Solution description <span style="font-weight:400;text-transform:none;">(max 100 words)</span></label>
-          <textarea id="f-desc" placeholder="Describe the environmental problem and how it was solved..." oninput="onWordInput()"></textarea>
+          <textarea id="f-desc" placeholder="What was the problem? What was done about it? What changed as a result?" oninput="onWordInput()"></textarea>
           <p class="word-count" id="word-count">0 / 100 words</p>
+          <p class="field-hint">Be specific. Numbers, dates, and who was involved make it real.</p>
         </div>
 
         <div class="field-group">
           <label class="field-label">Planetary boundaries addressed</label>
+          <p class="field-hint" style="margin-top:0; margin-bottom:8px;">Tick all that apply. Most solutions touch more than one.</p>
           <div class="pb-section" id="pb-checks"></div>
         </div>
 
