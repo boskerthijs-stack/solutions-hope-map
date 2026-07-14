@@ -255,7 +255,7 @@ window.previewPhoto = function(input, slotId, num) {
     if (num === 1) photo1 = data; else photo2 = data;
     const slot = document.getElementById(slotId);
     slot.innerHTML = `<img src="${data}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;" alt="preview"/>
-      <input type="file" accept="image/*" onchange="previewPhoto(this,'${slotId}',${num})" style="display:none;" />`;
+      <input type="file" accept="image/*,image/jpeg,image/png,image/heic,image/heif" onchange="previewPhoto(this,'${slotId}',${num})" style="display:none;" />`;
   });
 };
 
@@ -263,7 +263,7 @@ function resetSlot(slotId, num) {
   document.getElementById(slotId).innerHTML = `
     <span style="font-size:22px;color:#8aaa98;">&#128247;</span>
     <span style="font-size:11px;color:#8aaa98;margin-top:3px;">Photo ${num}</span>
-    <input type="file" accept="image/*" onchange="previewPhoto(this,'${slotId}',${num})" style="display:none;" />`;
+    <input type="file" accept="image/*,image/jpeg,image/png,image/heic,image/heif" onchange="previewPhoto(this,'${slotId}',${num})" style="display:none;" />`;
 }
 
 // ---- SUBMIT ----
@@ -594,6 +594,41 @@ textarea { min-height: 90px; line-height: 1.55; }
 .cancel-link { display: block; text-align: center; margin-top: 8px; font-size: 12px; color: #8aaa98; cursor: pointer; text-decoration: underline; }
 
 .hidden { display: none !important; }
+/* ---- MOBILE ----
+   On phones the 340px sidebar would leave almost no map. Instead the
+   panel slides up as a full-width sheet over the bottom of the screen. */
+@media (max-width: 700px) {
+  #main { flex-direction: column; }
+
+  #sidebar {
+    position: absolute; left: 0; right: 0; bottom: 0; top: auto;
+    width: 100% !important; min-width: 0 !important;
+    max-height: 80vh;
+    border-left: none;
+    border-top: 1px solid #d4e4dc;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 30px rgba(0,0,0,0.18);
+    transform: translateY(100%);
+    transition: transform 0.25s ease;
+    z-index: 1200;
+  }
+  #sidebar.open { transform: translateY(0); width: 100% !important; min-width: 0 !important; }
+  #sidebar-inner { width: 100%; padding: 20px 18px 28px; }
+
+  /* Filter bar: allow horizontal scrolling instead of squashing */
+  #filter-bar { padding: 10px 12px; }
+  #filter-row { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  #filter-row::-webkit-scrollbar { display: none; }
+
+  /* Welcome pop-up sizing */
+  #welcome-card { padding: 24px 22px; }
+  #welcome-card h2 { font-size: 19px; }
+  #welcome-card li { font-size: 13.5px; }
+
+  /* Bigger tap targets in the form */
+  input[type="text"], textarea { font-size: 16px; }  /* 16px stops iOS zooming in */
+  .photo-slot { min-height: 84px; }
+}
 </style>
 </head>
 <body>
@@ -676,12 +711,12 @@ textarea { min-height: 90px; line-height: 1.55; }
           <label class="photo-slot" id="slot1">
             <span style="font-size:22px;color:#8aaa98;">&#128247;</span>
             <span style="font-size:11px;color:#8aaa98;margin-top:3px;">Photo 1</span>
-            <input type="file" accept="image/*" onchange="previewPhoto(this,'slot1',1)" />
+            <input type="file" accept="image/*,image/jpeg,image/png,image/heic,image/heif" onchange="previewPhoto(this,'slot1',1)" />
           </label>
           <label class="photo-slot" id="slot2">
             <span style="font-size:22px;color:#8aaa98;">&#128247;</span>
             <span style="font-size:11px;color:#8aaa98;margin-top:3px;">Photo 2</span>
-            <input type="file" accept="image/*" onchange="previewPhoto(this,'slot2',2)" />
+            <input type="file" accept="image/*,image/jpeg,image/png,image/heic,image/heif" onchange="previewPhoto(this,'slot2',2)" />
           </label>
         </div>
 
